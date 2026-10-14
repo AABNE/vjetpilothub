@@ -1,18 +1,4 @@
-# Cloudflare Pages configuration
-# ─────────────────────────────────────────────────────────────────────────────
-# Required environment variables (set in Cloudflare Pages dashboard →
-#   Settings → Environment variables, for both Production and Preview):
-#
-#   DATABASE_URL   — Neon connection string
-#                    postgresql://user:pass@ep-xxx.region.aws.neon.tech/neondb?sslmode=require
-#   SESSION_SECRET — Random 64-char hex  (openssl rand -hex 64)
-#
-# Optional:
-#   ALLOWED_ORIGIN  — Your Pages domain  e.g. https://vjetstar.pages.dev
-#   RESEND_API_KEY  — Email sending via Resend
-# ─────────────────────────────────────────────────────────────────────────────
-
 name = "vjetstar"
 pages_build_output_dir = "artifacts/flight-timetable/dist/public"
-compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-10-01"
+compatibility_flags = ["nodejs_compat", "nodejs_compat_populate_process_env", "enable_nodejs_http_modules", "enable_nodejs_http_server_modules"]
