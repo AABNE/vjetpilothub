@@ -29,6 +29,9 @@ export const LoginResponse = zod.object({
   simulatorVersion: zod.enum(["MSFS2020", "MSFS2024"]),
   simbriefUsername: zod.string().nullable(),
   isAdmin: zod.boolean(),
+  mustChangePassword: zod.boolean(),
+  hasSeenTutorial: zod.boolean(),
+  simHours: zod.number(),
 });
 
 /**
@@ -77,15 +80,19 @@ export const GetMeResponse = zod.object({
   simulatorVersion: zod.enum(["MSFS2020", "MSFS2024"]),
   simbriefUsername: zod.string().nullable(),
   isAdmin: zod.boolean(),
+  mustChangePassword: zod.boolean(),
+  hasSeenTutorial: zod.boolean(),
+  simHours: zod.number(),
 });
 
 /**
- * @summary Save the current pilot's simulator and SimBrief settings
+ * @summary Save the current pilot's simulator, aircraft, and SimBrief settings
  */
 export const updatePilotProfileBodySimbriefUsernameMax = 80;
 
 export const UpdatePilotProfileBody = zod.object({
   simulatorVersion: zod.enum(["MSFS2020", "MSFS2024"]),
+  aircraft: zod.array(zod.enum(["A320", "A20N", "A21N", "B788"])).min(1),
   simbriefUsername: zod
     .string()
     .max(updatePilotProfileBodySimbriefUsernameMax)
@@ -99,6 +106,21 @@ export const UpdatePilotProfileResponse = zod.object({
   simulatorVersion: zod.enum(["MSFS2020", "MSFS2024"]),
   simbriefUsername: zod.string().nullable(),
   isAdmin: zod.boolean(),
+  mustChangePassword: zod.boolean(),
+  hasSeenTutorial: zod.boolean(),
+  simHours: zod.number(),
+});
+
+/**
+ * @summary Change the current user's password
+ */
+export const ChangePasswordBody = zod.object({
+  currentPassword: zod.string(),
+  newPassword: zod.string().min(8).max(128),
+});
+
+export const ChangePasswordResponse = zod.object({
+  ok: zod.boolean(),
 });
 
 /**
@@ -129,6 +151,8 @@ export const GetTimetableResponseItem = zod.object({
   startedAt: zod.string().nullable(),
   finishedAt: zod.string().nullable(),
   flightDurationSeconds: zod.number().nullable(),
+  flagReason: zod.string().nullable(),
+  approvedByAdmin: zod.boolean(),
   flight: zod.object({
     id: zod.number(),
     flightNumber: zod.string(),
@@ -164,6 +188,8 @@ export const StartFlightResponse = zod.object({
   startedAt: zod.string().nullable(),
   finishedAt: zod.string().nullable(),
   flightDurationSeconds: zod.number().nullable(),
+  flagReason: zod.string().nullable(),
+  approvedByAdmin: zod.boolean(),
   flight: zod.object({
     id: zod.number(),
     flightNumber: zod.string(),
@@ -191,6 +217,8 @@ export const FinishFlightResponse = zod.object({
   startedAt: zod.string().nullable(),
   finishedAt: zod.string().nullable(),
   flightDurationSeconds: zod.number().nullable(),
+  flagReason: zod.string().nullable(),
+  approvedByAdmin: zod.boolean(),
   flight: zod.object({
     id: zod.number(),
     flightNumber: zod.string(),
@@ -250,12 +278,12 @@ export const GetAdminUsersResponseItem = zod.object({
 export const GetAdminUsersResponse = zod.array(GetAdminUsersResponseItem);
 
 /**
- * @summary Create a new user
+ * @summary Create a new user (password optional; defaults to Vjet1234)
  */
 
 export const CreateAdminUserBody = zod.object({
   username: zod.string(),
-  password: zod.string(),
+  password: zod.string().optional(),
   aircraft: zod.array(zod.enum(["A320", "A20N", "A21N", "B788"])).min(1),
   simulatorVersion: zod.enum(["MSFS2020", "MSFS2024"]),
   isAdmin: zod.boolean(),

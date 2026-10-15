@@ -4,9 +4,12 @@ services:
     runtime: node
     buildCommand: pnpm install --frozen-lockfile && pnpm run build
     startCommand: node artifacts/api-server/dist/index.mjs
+    # Render free tier spins down after inactivity — the cron job below keeps it awake
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
       - key: DATABASE_URL
         sync: false
       - key: SESSION_SECRET
@@ -15,3 +18,12 @@ services:
         sync: false
       - key: EMAIL_PASSWORD
         sync: false
+
+  # Keep-alive: pings /api/healthz every 14 minutes to prevent Render free-tier sleep
+  - type: cron
+    name: va-flight-timetable-keepalive
+    runtime: node
+    buildCommand: echo "keepalive"
+    startCommand: node -e "fetch('https://va-flight-timetable.onrender.com/api/healthz').then(r=>r.json()).then(d=>console.log('ping ok',d)).catch(e=>console.error('ping failed',e))"
+    schedule: "*/14 * * * *"
+    envVars: []

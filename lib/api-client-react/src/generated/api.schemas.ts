@@ -51,6 +51,9 @@ export interface User {
   /** @nullable */
   simbriefUsername: string | null;
   isAdmin: boolean;
+  mustChangePassword: boolean;
+  hasSeenTutorial: boolean;
+  simHours: number;
 }
 
 export interface AdminUser {
@@ -65,7 +68,8 @@ export interface AdminUser {
 
 export interface CreateUserBody {
   username: string;
-  password: string;
+  /** Optional — leave blank to use default password Vjet1234 */
+  password?: string;
   /** @minItems 1 */
   aircraft: AircraftCode[];
   simulatorVersion: SimulatorVersion;
@@ -90,11 +94,23 @@ export interface BootstrapInput {
 
 export interface PilotProfileUpdate {
   simulatorVersion: SimulatorVersion;
+  /** @minItems 1 */
+  aircraft: AircraftCode[];
   /**
    * @maxLength 80
    * @nullable
    */
   simbriefUsername: string | null;
+}
+
+export interface ChangePasswordBody {
+  currentPassword: string;
+  /** @minLength 8 */
+  newPassword: string;
+}
+
+export interface ChangePasswordResponse {
+  ok: boolean;
 }
 
 export interface AdminUserUpdate {
@@ -125,6 +141,9 @@ export interface TimetableEntry {
   finishedAt: string | null;
   /** @nullable */
   flightDurationSeconds: number | null;
+  /** @nullable */
+  flagReason: string | null;
+  approvedByAdmin: boolean;
   flight: Flight;
 }
 
@@ -141,6 +160,26 @@ export interface AdminTimetableEntry {
   finishedAt: string | null;
   /** @nullable */
   flightDurationSeconds: number | null;
+  /** @nullable */
+  flagReason: string | null;
+  approvedByAdmin: boolean;
+  flight: Flight;
+}
+
+export interface FlaggedEntry {
+  id: number;
+  userId: number;
+  pilotUsername: string;
+  flightId: number;
+  status: string;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+  /** @nullable */
+  flightDurationSeconds: number | null;
+  /** @nullable */
+  flagReason: string | null;
   flight: Flight;
 }
 

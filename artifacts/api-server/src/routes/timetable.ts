@@ -13,6 +13,10 @@ import {
 
 const router: IRouter = Router();
 
+// A flight is suspicious if it finishes in under 10% of the scheduled duration
+// (e.g. a 120-min flight done in under 12 mins = almost certainly a spam click)
+const SUSPICIOUS_THRESHOLD = 0.10;
+
 async function getTimetableWithFlights(userId: number) {
   const entries = await db
     .select()
@@ -36,6 +40,8 @@ async function getTimetableWithFlights(userId: number) {
         startedAt: entry.startedAt ? entry.startedAt.toISOString() : null,
         finishedAt: entry.finishedAt ? entry.finishedAt.toISOString() : null,
         flightDurationSeconds: entry.flightDurationSeconds,
+        flagReason: entry.flagReason ?? null,
+        approvedByAdmin: entry.approvedByAdmin,
         flight: {
           id: flight.id,
           flightNumber: flight.flightNumber,
@@ -76,7 +82,6 @@ router.post("/timetable", async (req, res): Promise<void> => {
 
   const { flightId } = parsed.data;
 
-  // Check flight exists
   const [flight] = await db
     .select()
     .from(flightsTable)
@@ -87,7 +92,6 @@ router.post("/timetable", async (req, res): Promise<void> => {
     return;
   }
 
-  // Check not already in timetable (non-completed)
   const existing = await db
     .select()
     .from(timetableTable)
@@ -98,7 +102,7 @@ router.post("/timetable", async (req, res): Promise<void> => {
       ),
     );
 
-  const nonCompleted = existing.filter((e) => e.status !== "completed");
+  const nonCompleted = existing.filter((e) => e.status !== "completed" && e.status !== "flagged");
   if (nonCompleted.length > 0) {
     res.status(409).json({ error: "Flight already in your timetable" });
     return;
@@ -147,6 +151,11 @@ router.post("/timetable/:id/start", async (req, res): Promise<void> => {
     return;
   }
 
+  if (entry.status !== "pending") {
+    res.status(409).json({ error: "Flight has already been started" });
+    return;
+  }
+
   const [updated] = await db
     .update(timetableTable)
     .set({ status: "active", startedAt: new Date() })
@@ -187,19 +196,62 @@ router.post("/timetable/:id/finish", async (req, res): Promise<void> => {
     return;
   }
 
+  if (entry.status !== "active") {
+    res.status(409).json({ error: "Flight is not currently active" });
+    return;
+  }
+
+  const [flight] = await db
+    .select()
+    .from(flightsTable)
+    .where(eq(flightsTable.id, entry.flightId));
+
   const finishedAt = new Date();
   const startedAt = entry.startedAt ?? finishedAt;
   const durationSeconds = Math.floor((finishedAt.getTime() - startedAt.getTime()) / 1000);
 
+  const scheduledSeconds = (flight?.durationMinutes ?? 0) * 60;
+  const minimumSeconds = Math.floor(scheduledSeconds * SUSPICIOUS_THRESHOLD);
+
+  // Flag if finished way too fast relative to scheduled duration.
+  // Also flag if it somehow finished in under 60 seconds regardless of flight length.
+  const isSuspicious =
+    scheduledSeconds > 0 &&
+    (durationSeconds < minimumSeconds || durationSeconds < 60);
+
+  let flagReason: string | null = null;
+  if (isSuspicious) {
+    const minutes = Math.floor(durationSeconds / 60);
+    const seconds = durationSeconds % 60;
+    const timeStr = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+    flagReason = `Completed in ${timeStr} — scheduled duration is ${flight?.durationMinutes ?? "?"} min. Requires admin review.`;
+  }
+
+  const newStatus = isSuspicious ? "flagged" : "completed";
+
   const [updated] = await db
     .update(timetableTable)
     .set({
-      status: "completed",
+      status: newStatus,
       finishedAt,
       flightDurationSeconds: durationSeconds,
+      flagReason,
+      approvedByAdmin: false,
     })
     .where(eq(timetableTable.id, entry.id))
     .returning();
+
+  // Only add sim hours if not flagged
+  if (!isSuspicious) {
+    const user = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+    if (user[0]) {
+      const addHours = durationSeconds / 3600;
+      await db
+        .update(usersTable)
+        .set({ simHours: (user[0].simHours ?? 0) + addHours })
+        .where(eq(usersTable.id, req.session.userId));
+    }
+  }
 
   const entries = await getTimetableWithFlights(req.session.userId);
   const result = entries.find((e) => e.id === updated.id);
@@ -220,14 +272,12 @@ router.delete("/timetable/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Check if requesting user is admin
   const [currentUser] = await db
     .select()
     .from(usersTable)
     .where(eq(usersTable.id, req.session.userId));
   const isAdmin = currentUser?.isAdmin === "true";
 
-  // Admins can delete any entry; pilots can only delete their own
   const [entry] = await db
     .select()
     .from(timetableTable)
@@ -245,9 +295,8 @@ router.delete("/timetable/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Pilots cannot delete completed log entries — only admins can
-  if (entry.status === "completed" && !isAdmin) {
-    res.status(403).json({ error: "Only admins can remove completed flight logs" });
+  if ((entry.status === "completed" || entry.status === "flagged") && !isAdmin) {
+    res.status(403).json({ error: "Only admins can remove completed or flagged flight logs" });
     return;
   }
 

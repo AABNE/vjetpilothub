@@ -153,6 +153,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: Change the current user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordBody"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChangePasswordResponse"
+        "401":
+          description: Not authenticated or wrong current password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /flights:
     get:
       operationId: getAvailableFlights
@@ -478,6 +503,12 @@ components:
           type: ["string", "null"]
         isAdmin:
           type: boolean
+        mustChangePassword:
+          type: boolean
+        hasSeenTutorial:
+          type: boolean
+        simHours:
+          type: number
       required:
         - id
         - username
@@ -485,6 +516,9 @@ components:
         - simulatorVersion
         - simbriefUsername
         - isAdmin
+        - mustChangePassword
+        - hasSeenTutorial
+        - simHours
 
     AdminUser:
       type: object
@@ -518,6 +552,7 @@ components:
           type: string
         password:
           type: string
+          description: "Optional — leave blank to use default password Vjet1234"
         aircraft:
           type: array
           items:
@@ -529,7 +564,6 @@ components:
           type: boolean
       required:
         - username
-        - password
         - aircraft
         - simulatorVersion
         - isAdmin
@@ -559,10 +593,15 @@ components:
       properties:
         simulatorVersion:
           $ref: "#/components/schemas/SimulatorVersion"
+        aircraft:
+          type: array
+          items:
+            $ref: "#/components/schemas/AircraftCode"
+          minItems: 1
         simbriefUsername:
           type: ["string", "null"]
           maxLength: 80
-      required: [simulatorVersion, simbriefUsername]
+      required: [simulatorVersion, aircraft, simbriefUsername]
 
     AdminUserUpdate:
       type: object
@@ -575,6 +614,24 @@ components:
         simulatorVersion:
           $ref: "#/components/schemas/SimulatorVersion"
       required: [aircraft, simulatorVersion]
+
+    ChangePasswordBody:
+      type: object
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+          maxLength: 128
+      required: [currentPassword, newPassword]
+
+    ChangePasswordResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required: [ok]
 
     AircraftCode:
       type: string

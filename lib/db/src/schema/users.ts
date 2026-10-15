@@ -11,6 +11,7 @@ export const usersTable = pgTable("users", {
   simbriefUsername: text("simbrief_username"),
   isAdmin: text("is_admin").notNull().default("false"),
   hasSeenTutorial: text("has_seen_tutorial").notNull().default("false"),
+  mustChangePassword: text("must_change_password").notNull().default("false"),
   simHours: doublePrecision("sim_hours").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -5,6 +5,8 @@ import { db, usersTable, eq, sql } from "@workspace/db";
 
 import {
   BootstrapAdminBody,
+  ChangePasswordBody,
+  ChangePasswordResponse,
   GetBootstrapStatusResponse,
   GetMeResponse,
   LoginBody,
@@ -24,6 +26,8 @@ function publicUser(user: any) {
     simulatorVersion: user.simulatorVersion,
     simbriefUsername: user.simbriefUsername,
     isAdmin: user.isAdmin === "true",
+    mustChangePassword: user.mustChangePassword === "true",
+    hasSeenTutorial: user.hasSeenTutorial === "true",
     simHours: user.simHours ?? 0,
   };
 }
@@ -52,7 +56,8 @@ router.post("/auth/bootstrap", async (req, res): Promise<void> => {
       aircraft: aircraft.join(","),
       simulatorVersion,
       isAdmin: "true",
-      hasSeenTutorial: "true",
+      hasSeenTutorial: "false",
+      mustChangePassword: "false",
     }).returning();
     return user;
   });
@@ -99,8 +104,6 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 
   req.session.userId = user.id;
 
-  // Explicitly save the session before responding so the cookie is valid
-  // the moment the client sends its next request (e.g. /api/auth/me).
   req.session.save((err) => {
     if (err) {
       res.status(500).json({ error: "Failed to save session" });
@@ -152,6 +155,7 @@ router.patch("/auth/profile", async (req, res): Promise<void> => {
     .update(usersTable)
     .set({
       simulatorVersion: parsed.data.simulatorVersion,
+      aircraft: parsed.data.aircraft.join(","),
       simbriefUsername: parsed.data.simbriefUsername?.trim() || null,
     })
     .where(eq(usersTable.id, req.session.userId))
@@ -163,6 +167,43 @@ router.patch("/auth/profile", async (req, res): Promise<void> => {
   }
 
   res.json(UpdatePilotProfileResponse.parse(publicUser(updated)));
+});
+
+router.post("/auth/change-password", async (req, res): Promise<void> => {
+  if (!req.session.userId) {
+    res.status(401).json({ error: "Not authenticated" });
+    return;
+  }
+
+  const parsed = ChangePasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.id, req.session.userId));
+
+  if (!user) {
+    res.status(401).json({ error: "User not found" });
+    return;
+  }
+
+  const valid = await bcrypt.compare(parsed.data.currentPassword, user.passwordHash);
+  if (!valid) {
+    res.status(401).json({ error: "Current password is incorrect" });
+    return;
+  }
+
+  const newHash = await bcrypt.hash(parsed.data.newPassword, 12);
+  await db
+    .update(usersTable)
+    .set({ passwordHash: newHash, mustChangePassword: "false" })
+    .where(eq(usersTable.id, req.session.userId));
+
+  res.json(ChangePasswordResponse.parse({ ok: true }));
 });
 
 router.patch("/auth/tutorial-seen", async (req, res): Promise<void> => {

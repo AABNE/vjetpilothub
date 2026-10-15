@@ -4,9 +4,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/components/auth-provider";
 import { useLogout, getGetMeQueryKey } from "@workspace/api-client-react";
-import { CalendarDays, Plane, ClipboardList, Settings2, ShieldCheck, LogOut, Download } from "lucide-react";
+import { CalendarDays, Plane, ClipboardList, Settings2, ShieldCheck, LogOut, Download, KeyRound, Check, ArrowRight, X } from "lucide-react";
 import { VJetstarLogo } from "@/components/VJetstarLogo";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Login from "@/pages/login";
 import Timetable from "@/pages/timetable";
 import Flights from "@/pages/flights";
@@ -34,6 +34,179 @@ function JetstarStar({ size = 20 }: { size?: number }) {
   );
 }
 
+// ─── Force-password-change modal ───────────────────────────────────────────
+function ForcePasswordModal({ onDone }: { onDone: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("Vjet1234");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const qc = useQueryClient();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (newPassword === "Vjet1234") { setError("Please choose a different password than the default."); return; }
+    if (newPassword !== confirmPassword) { setError("Passwords do not match."); return; }
+    setPending(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to change password.");
+      } else {
+        // Refresh user state so mustChangePassword is false
+        await qc.invalidateQueries({ queryKey: getGetMeQueryKey() });
+        onDone();
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="bg-[#fb5713] px-6 py-5 text-white">
+          <div className="flex items-center gap-3">
+            <KeyRound className="h-6 w-6" />
+            <div>
+              <h2 className="font-black uppercase tracking-tight">Change your password</h2>
+              <p className="mt-0.5 text-xs text-white/80">You're using the default password — set a new one to continue.</p>
+            </div>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4 p-6">
+          <div>
+            <label className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[.16em] text-[#6b7280]">Current password</label>
+            <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} required
+              className="h-10 w-full rounded-xl border border-[#e5e7eb] bg-[#f9fafb] px-3 text-sm outline-none focus:border-[#fb5713]" />
+            <p className="mt-1 text-[10px] text-[#9ca3af]">Pre-filled with the default: Vjet1234</p>
+          </div>
+          <div>
+            <label className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[.16em] text-[#6b7280]">New password</label>
+            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required minLength={8}
+              className="h-10 w-full rounded-xl border border-[#e5e7eb] bg-[#f9fafb] px-3 text-sm outline-none focus:border-[#fb5713]" />
+          </div>
+          <div>
+            <label className="mb-1.5 block font-mono text-[10px] font-bold uppercase tracking-[.16em] text-[#6b7280]">Confirm new password</label>
+            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required minLength={8}
+              className="h-10 w-full rounded-xl border border-[#e5e7eb] bg-[#f9fafb] px-3 text-sm outline-none focus:border-[#fb5713]" />
+          </div>
+          {error && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+          )}
+          <button type="submit" disabled={pending}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#fb5713] py-3 text-sm font-bold text-white transition hover:bg-[#e04d0e] disabled:opacity-50">
+            {pending ? "Updating…" : "Set new password"}
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── First-time tutorial modal ──────────────────────────────────────────────
+const tutorialSteps = [
+  {
+    title: "Welcome to VJetstar Ops",
+    body: "This is your virtual operations hub for Jetstar Airways simulation. You can manage your flights, track hours, and dispatch routes — all from here.",
+    icon: "✈️",
+  },
+  {
+    title: "My Timetable",
+    body: "Head to My Timetable to browse available routes and add flights to your schedule. Once dispatched, mark them as started and finished to log your hours.",
+    icon: "📅",
+  },
+  {
+    title: "Available Routes",
+    body: "Browse current Jetstar routes filtered to your assigned aircraft type. Your fleet assignment determines which routes appear here.",
+    icon: "🗺️",
+  },
+  {
+    title: "SimBrief Integration",
+    body: "Connect your SimBrief Pilot ID in Settings to import flight plans with one click. Your dispatch gets added straight to your timetable.",
+    icon: "📋",
+  },
+  {
+    title: "Settings",
+    body: "Update your simulator version (MSFS 2020 or 2024), your aircraft assignments, SimBrief ID, and your account password anytime from Settings.",
+    icon: "⚙️",
+  },
+];
+
+function TutorialModal({ onDone }: { onDone: () => void }) {
+  const [step, setStep] = useState(0);
+  const current = tutorialSteps[step];
+  const isLast = step === tutorialSteps.length - 1;
+
+  const handleDone = async () => {
+    try {
+      await fetch("/api/auth/tutorial-seen", { method: "PATCH", credentials: "include" });
+    } catch { /* swallow */ }
+    onDone();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="bg-[#1a1a1a] px-6 py-5 text-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <VJetstarLogo height={28} light />
+              <span className="font-mono text-[9px] uppercase tracking-[.2em] text-white/40">Quick start</span>
+            </div>
+            <button onClick={handleDone} className="rounded-lg p-1 text-white/40 transition hover:text-white/70">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="mb-4 text-4xl">{current.icon}</div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-[#1a1a1a]">{current.title}</h2>
+          <p className="mt-3 text-sm leading-relaxed text-[#6b7280]">{current.body}</p>
+
+          {/* Step dots */}
+          <div className="mt-6 flex items-center gap-1.5">
+            {tutorialSteps.map((_, i) => (
+              <button key={i} onClick={() => setStep(i)}
+                className={`h-1.5 rounded-full transition-all ${i === step ? "w-6 bg-[#fb5713]" : "w-1.5 bg-[#d1d5db] hover:bg-[#9ca3af]"}`} />
+            ))}
+          </div>
+
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <button onClick={() => setStep(s => Math.max(0, s - 1))} disabled={step === 0}
+              className="rounded-xl border border-[#e5e7eb] px-4 py-2 text-xs font-semibold text-[#6b7280] transition hover:bg-[#f3f4f6] disabled:opacity-0">
+              Back
+            </button>
+            {isLast ? (
+              <button onClick={handleDone}
+                className="flex items-center gap-2 rounded-xl bg-[#fb5713] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#e04d0e]">
+                <Check className="h-4 w-4" /> Get started
+              </button>
+            ) : (
+              <button onClick={() => setStep(s => s + 1)}
+                className="flex items-center gap-2 rounded-xl bg-[#1a1a1a] px-6 py-2.5 text-sm font-bold text-white transition hover:bg-[#333]">
+                Next <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main layout ────────────────────────────────────────────────────────────
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const [path, setPath] = useLocation();
@@ -47,6 +220,10 @@ function Layout({ children }: { children: React.ReactNode }) {
       },
     },
   });
+
+  // Local state to dismiss the modals for this session after handling
+  const [pwDone, setPwDone] = useState(false);
+  const [tutDone, setTutDone] = useState(false);
 
   const publicPage = path === "/login";
   useEffect(() => {
@@ -67,8 +244,16 @@ function Layout({ children }: { children: React.ReactNode }) {
   if ((!user && !publicPage) || (user && publicPage)) return null;
   if (!user) return <>{children}</>;
 
+  const pilot = user as any;
+  const needsPasswordChange = pilot.mustChangePassword && !pwDone;
+  // Show tutorial only after password is set (if needed), and only once
+  const needsTutorial = !needsPasswordChange && !pilot.hasSeenTutorial && !tutDone;
+
   return (
     <div className="min-h-[100dvh] bg-[#f9fafb] text-[#1a1a1a]">
+      {needsPasswordChange && <ForcePasswordModal onDone={() => setPwDone(true)} />}
+      {needsTutorial && <TutorialModal onDone={() => setTutDone(true)} />}
+
       <header className="sticky top-0 z-30 flex h-[64px] items-center justify-between border-b border-[#1a1a1a] bg-[#1a1a1a] px-4 md:px-8">
         <Link href="/timetable" className="flex items-center gap-3" data-testid="link-brand-home">
           <VJetstarLogo height={34} light />
@@ -85,7 +270,7 @@ function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="hidden min-w-[80px] md:block">
             <div className="text-sm font-bold text-white" data-testid="text-username">{user.username}</div>
-            <div className="font-mono text-[9px] uppercase tracking-wider text-white/40">{user.isAdmin ? "Admin" : (user as any).simulatorVersion || "Pilot"}</div>
+            <div className="font-mono text-[9px] uppercase tracking-wider text-white/40">{user.isAdmin ? "Admin" : (pilot.simulatorVersion || "Pilot")}</div>
           </div>
         </div>
       </header>

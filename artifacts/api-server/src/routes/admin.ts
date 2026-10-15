@@ -10,6 +10,8 @@ import {
   UpdateAdminUserResponse,
 } from "@workspace/api-zod";
 
+const DEFAULT_PASSWORD = "Vjet1234";
+
 const router: IRouter = Router();
 
 async function requireAdmin(req: any, res: any): Promise<boolean> {
@@ -90,19 +92,25 @@ router.post("/admin/users", async (req, res): Promise<void> => {
   }
   const { username, password, aircraft, simulatorVersion, isAdmin } = parsed.data;
 
+  // If no password supplied, use the default and require change on first login
+  const chosenPassword = (password && password.trim().length > 0) ? password.trim() : DEFAULT_PASSWORD;
+  const mustChange = (!password || password.trim().length === 0) ? "true" : "false";
+
   const existing = await db.select().from(usersTable).where(eq(usersTable.username, username));
   if (existing.length > 0) {
     res.status(409).json({ error: "Username already taken" });
     return;
   }
 
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await bcrypt.hash(chosenPassword, 10);
   const [user] = await db.insert(usersTable).values({
     username: username.trim(),
     passwordHash,
     aircraft: aircraft.join(","),
     simulatorVersion,
     isAdmin: isAdmin ? "true" : "false",
+    mustChangePassword: mustChange,
+    hasSeenTutorial: "false",
   }).returning();
 
   const [createdUser] = GetAdminUsersResponse.parse([{
@@ -228,3 +236,93 @@ router.delete("/admin/users/:id", async (req, res): Promise<void> => {
 });
 
 export default router;
+
+// ─── Flagged flights review ──────────────────────────────────────────────────
+
+router.get("/admin/flagged", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+
+  const entries = await db
+    .select()
+    .from(timetableTable)
+    .where(eq(timetableTable.status, "flagged"))
+    .orderBy(timetableTable.finishedAt);
+
+  const result = [];
+  for (const entry of entries) {
+    const [flight] = await db.select().from(flightsTable).where(eq(flightsTable.id, entry.flightId));
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, entry.userId));
+    if (flight && user) {
+      result.push({
+        id: entry.id,
+        userId: entry.userId,
+        pilotUsername: user.username,
+        flightId: entry.flightId,
+        status: entry.status,
+        startedAt: entry.startedAt ? entry.startedAt.toISOString() : null,
+        finishedAt: entry.finishedAt ? entry.finishedAt.toISOString() : null,
+        flightDurationSeconds: entry.flightDurationSeconds,
+        flagReason: entry.flagReason,
+        flight: {
+          id: flight.id,
+          flightNumber: flight.flightNumber,
+          departure: flight.departure,
+          arrival: flight.arrival,
+          aircraft: flight.aircraft,
+          departureTime: flight.departureTime,
+          flightDate: flight.flightDate,
+          durationMinutes: flight.durationMinutes,
+        },
+      });
+    }
+  }
+
+  res.json(result);
+});
+
+router.post("/admin/flagged/:id/approve", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid entry ID" }); return; }
+
+  const [entry] = await db.select().from(timetableTable).where(eq(timetableTable.id, id));
+  if (!entry || entry.status !== "flagged") {
+    res.status(404).json({ error: "Flagged entry not found" });
+    return;
+  }
+
+  // Move to completed and credit sim hours
+  await db.update(timetableTable)
+    .set({ status: "completed", approvedByAdmin: true })
+    .where(eq(timetableTable.id, id));
+
+  if (entry.flightDurationSeconds) {
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, entry.userId));
+    if (user) {
+      const addHours = entry.flightDurationSeconds / 3600;
+      await db.update(usersTable)
+        .set({ simHours: (user.simHours ?? 0) + addHours })
+        .where(eq(usersTable.id, entry.userId));
+    }
+  }
+
+  res.json({ ok: true });
+});
+
+router.post("/admin/flagged/:id/reject", async (req, res): Promise<void> => {
+  if (!(await requireAdmin(req, res))) return;
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid entry ID" }); return; }
+
+  const [entry] = await db.select().from(timetableTable).where(eq(timetableTable.id, id));
+  if (!entry || entry.status !== "flagged") {
+    res.status(404).json({ error: "Flagged entry not found" });
+    return;
+  }
+
+  // Delete the entry entirely — no hours credited, gone from logs
+  await db.delete(timetableTable).where(eq(timetableTable.id, id));
+  res.json({ ok: true });
+});

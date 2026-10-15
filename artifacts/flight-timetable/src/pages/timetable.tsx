@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetTimetableQueryKey, useGetTimetable, useStartFlight, useFinishFlight, useRemoveFromTimetable } from "@workspace/api-client-react";
 import { useAuth } from "@/components/auth-provider";
-import { ArrowRight, Clock3, ExternalLink, Plane, Radio, RotateCw } from "lucide-react";
+import { AlertTriangle, ArrowRight, Clock3, ExternalLink, Plane, Radio, RotateCw } from "lucide-react";
 import { Link } from "wouter";
 
 function JetstarStar({ size = 16, className = "" }: { size?: number; className?: string }) {
@@ -17,6 +17,8 @@ const statusStyle = (s: string) =>
     ? "bg-green-100 text-green-700"
     : s.toLowerCase() === "completed"
     ? "bg-[#f3f4f6] text-[#6b7280]"
+    : s.toLowerCase() === "flagged"
+    ? "bg-yellow-100 text-yellow-700"
     : "bg-[#fff7ed] text-[#fb5713]";
 
 const fmt = (v: string) => {
@@ -71,8 +73,9 @@ export default function Timetable() {
 
   const entries = q.data || [];
   const active = entries.find(e => e.status.toLowerCase() === "active");
-  const upcoming = entries.filter(e => e.status.toLowerCase() !== "completed");
+  const upcoming = entries.filter(e => e.status.toLowerCase() !== "completed" && e.status.toLowerCase() !== "flagged");
   const completed = entries.filter(e => e.status.toLowerCase() === "completed");
+  const flagged = entries.filter(e => e.status.toLowerCase() === "flagged");
   const err = q.error as any;
 
   return (
@@ -229,6 +232,29 @@ export default function Timetable() {
                 View records <ArrowRight className="h-3 w-3" />
               </Link>
             </div>
+            {flagged.length > 0 && (
+              <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-5">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                  <div className="font-mono text-[9px] font-bold uppercase tracking-[.18em] text-yellow-700">Pending review</div>
+                </div>
+                <div className="mt-2 flex items-end justify-between">
+                  <span className="text-3xl font-black text-yellow-700">{flagged.length}</span>
+                  <span className="pb-1 text-xs text-yellow-600">flagged</span>
+                </div>
+                <p className="mt-2 text-[10px] leading-relaxed text-yellow-600">
+                  {flagged.length === 1 ? "This flight was" : "These flights were"} flagged for unusually short duration and {flagged.length === 1 ? "is" : "are"} awaiting admin approval before being added to your logs.
+                </p>
+                <div className="mt-3 space-y-1.5">
+                  {flagged.map(f => (
+                    <div key={f.id} className="flex items-center justify-between rounded-lg border border-yellow-200 bg-white px-3 py-2">
+                      <span className="font-mono text-[10px] font-bold text-yellow-700">{f.flight.flightNumber}</span>
+                      <span className="text-[9px] text-yellow-500">{f.flight.departure} → {f.flight.arrival}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </aside>
         </div>
       )}
